@@ -1,13 +1,15 @@
 use std::marker::PhantomData;
 
+use plonky2::field::extension::Extendable;
+use plonky2::field::types::{Field, PrimeField, Sample};
 use plonky2::hash::hash_types::RichField;
 use plonky2::iop::generator::{GeneratedValues, SimpleGenerator};
 use plonky2::iop::target::{BoolTarget, Target};
 use plonky2::iop::witness::{PartitionWitness, Witness};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
+use plonky2::plonk::circuit_data::CommonCircuitData;
+use plonky2::util::serialization::{Buffer, IoError};
 use plonky2_ecdsa::gadgets::biguint::GeneratedValuesBigUint;
-use plonky2_field::extension::Extendable;
-use plonky2_field::types::{Field, PrimeField, Sample};
 use plonky2_sha512::circuit::biguint_to_bits_target;
 
 use crate::curve::curve_types::{AffinePoint, Curve, CurveScalar};
@@ -86,7 +88,6 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
     for CircuitBuilder<F, D>
 {
     fn constant_affine_point<C: Curve>(&mut self, point: AffinePoint<C>) -> AffinePointTarget<C> {
-        // TODO: Why not zero here?
         // debug_assert!(!point.zero);
         AffinePointTarget {
             x: self.constant_nonnative(point.x),
@@ -294,7 +295,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         let mut bits = biguint_to_bits_target::<F, D, 2>(self, &p.y.value);
         let x_bits_low_32 = self.split_le_base::<2>(p.x.value.get_limb(0).0, 32);
 
-        let a = bits[0].target.clone();
+        let a = bits[0].target;
         let b = x_bits_low_32[0];
         // a | b = a + b - a * b
         let a_add_b = self.add(a, b);
@@ -321,24 +322,35 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct CurvePointDecompressionGenerator<F: RichField + Extendable<D>, const D: usize, C: Curve> {
     pv: Vec<BoolTarget>,
     p: AffinePointTarget<C>,
     _phantom: PhantomData<F>,
 }
 
-impl<F: RichField + Extendable<D>, const D: usize, C: Curve> SimpleGenerator<F>
+impl<F: RichField + Extendable<D>, const D: usize, C: Curve> SimpleGenerator<F, D>
     for CurvePointDecompressionGenerator<F, D, C>
 {
     fn dependencies(&self) -> Vec<Target> {
         self.pv.iter().cloned().map(|l| l.target).collect()
     }
 
-    fn run_once(&self, witness: &PartitionWitness<F>, out_buffer: &mut GeneratedValues<F>) {
+    fn id(&self) -> String {
+        todo!()
+    }
+
+    fn serialize(&self, _: &mut Vec<u8>, _: &CommonCircuitData<F, D>) -> Result<(), IoError> {
+        todo!()
+    }
+    fn deserialize(_: &mut Buffer<'_>, _: &CommonCircuitData<F, D>) -> Result<Self, IoError> {
+        todo!()
+    }
+
+    fn run_once(&self, witness: &PartitionWitness<F>, out_buffer: &mut GeneratedValues<F>) -> Result<(), anyhow::Error> {
         let mut bits = Vec::new();
         for i in 0..256 {
-            bits.push(witness.get_bool_target(self.pv[i].clone()));
+            bits.push(witness.get_bool_target(self.pv[i]));
         }
         let mut s: [u8; 32] = [0; 32];
         for i in 0..32 {
@@ -350,8 +362,9 @@ impl<F: RichField + Extendable<D>, const D: usize, C: Curve> SimpleGenerator<F>
         }
         let point = point_decompress(s.as_slice());
 
-        out_buffer.set_biguint_target(&self.p.x.value, &point.x.to_canonical_biguint());
-        out_buffer.set_biguint_target(&self.p.y.value, &point.y.to_canonical_biguint());
+        out_buffer.set_biguint_target(&self.p.x.value, &point.x.to_canonical_biguint())?;
+        out_buffer.set_biguint_target(&self.p.y.value, &point.y.to_canonical_biguint())?;
+        Ok(())
     }
 }
 
@@ -360,11 +373,11 @@ mod tests {
     use std::ops::Neg;
 
     use anyhow::Result;
+    use plonky2::field::types::{Field, Sample};
     use plonky2::iop::witness::PartialWitness;
     use plonky2::plonk::circuit_builder::CircuitBuilder;
     use plonky2::plonk::circuit_data::CircuitConfig;
     use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
-    use plonky2_field::types::{Field, Sample};
 
     use crate::curve::curve_types::{AffinePoint, Curve, CurveScalar};
     use crate::curve::ed25519::Ed25519;
@@ -525,7 +538,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_curve_mul() -> Result<()> {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;
@@ -558,7 +570,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_curve_random() -> Result<()> {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;

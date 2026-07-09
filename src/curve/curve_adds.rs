@@ -1,7 +1,7 @@
 use std::ops::Add;
 
-use plonky2_field::ops::Square;
-use plonky2_field::types::Field;
+use plonky2::field::ops::Square;
+use plonky2::field::types::Field;
 
 use crate::curve::curve_types::{AffinePoint, Curve, ProjectivePoint};
 
@@ -36,7 +36,6 @@ impl<C: Curve> Add<ProjectivePoint<C>> for ProjectivePoint<C> {
         // Check if we're doubling or adding inverses.
         if x1z2 == x2z1 {
             if y1z2 == y2z1 {
-                // TODO: inline to avoid redundant muls.
                 return self.double();
             }
             if y1z2 == -y2z1 {

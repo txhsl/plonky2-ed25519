@@ -2,14 +2,12 @@ use core::fmt::{self, Debug, Display, Formatter};
 use core::hash::{Hash, Hasher};
 use core::iter::{Product, Sum};
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-use std::vec::Vec;
 
 use itertools::Itertools;
 use num::bigint::BigUint;
 use num::{Integer, One};
+use plonky2::field::types::{Field, PrimeField, Sample};
 use serde::{Deserialize, Serialize};
-
-use plonky2_field::types::{Field, PrimeField, Sample};
 
 /// The base field of the curve25519 elliptic curve.
 ///
@@ -136,6 +134,16 @@ impl Field for Ed25519Base {
     #[inline]
     fn from_noncanonical_u128(n: u128) -> Self {
         Self([n as u64, (n >> 64) as u64, 0, 0])
+    }
+
+    #[inline]
+    fn from_noncanonical_u64(n: u64) -> Self {
+        Self([n, 0, 0, 0])
+    }
+
+    #[inline]
+    fn from_noncanonical_i64(n: i64) -> Self {
+        Self([n as u64, 0, 0, 0])
     }
 
     #[inline]

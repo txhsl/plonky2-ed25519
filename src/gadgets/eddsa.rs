@@ -1,9 +1,9 @@
+use plonky2::field::extension::Extendable;
 use plonky2::hash::hash_types::RichField;
 use plonky2::iop::target::BoolTarget;
 use plonky2::iop::witness::{PartialWitness, WitnessWrite};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
-use plonky2_field::extension::Extendable;
-use plonky2_sha512::circuit::{array_to_bits, bits_to_biguint_target, make_circuits};
+use plonky2_sha512::circuit::{array_to_bits, bits_to_biguint_target, sha512_circuit};
 
 use crate::curve::curve_types::Curve;
 use crate::curve::ed25519::Ed25519;
@@ -12,6 +12,7 @@ use crate::gadgets::curve_fixed_base::fixed_base_curve_mul_circuit;
 use crate::gadgets::curve_windowed_mul::CircuitBuilderWindowedMul;
 use crate::gadgets::nonnative::CircuitBuilderNonNative;
 
+#[derive(Debug, Clone)]
 pub struct EDDSATargets {
     pub msg: Vec<BoolTarget>,
     pub sig: Vec<BoolTarget>,
@@ -29,13 +30,13 @@ fn bits_in_le(input_vec: Vec<BoolTarget>) -> Vec<BoolTarget> {
     bits
 }
 
-pub fn make_verify_circuits<F: RichField + Extendable<D>, const D: usize>(
+pub fn ed25519_circuit<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     msg_len: usize,
 ) -> EDDSATargets {
-    let msg_len_in_bits = msg_len * 8;
+    let msg_len_in_bits = msg_len;
     let sha512_msg_len = msg_len_in_bits + 512;
-    let sha512 = make_circuits(builder, sha512_msg_len as u128);
+    let sha512 = sha512_circuit(builder, sha512_msg_len as u128);
 
     let mut msg = Vec::new();
     let mut sig = Vec::new();
@@ -79,10 +80,10 @@ pub fn make_verify_circuits<F: RichField + Extendable<D>, const D: usize>(
     let rhs = builder.curve_add(&r, &ha);
     builder.connect_affine_point(&sb, &rhs);
 
-    return EDDSATargets { msg, sig, pk };
+    EDDSATargets { msg, sig, pk }
 }
 
-pub fn fill_circuits<F: RichField + Extendable<D>, const D: usize>(
+pub fn fill_ecdsa_targets<F: RichField + Extendable<D>, const D: usize>(
     pw: &mut PartialWitness<F>,
     msg: &[u8],
     sig: &[u8],
@@ -122,25 +123,32 @@ mod tests {
     use plonky2::plonk::circuit_data::CircuitConfig;
     use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
     use rand::Rng;
-
-    use crate::curve::eddsa::{SAMPLE_MSG1, SAMPLE_PK1, SAMPLE_SIG1};
-    use crate::gadgets::eddsa::{fill_circuits, make_verify_circuits};
+    use ed25519_compact::KeyPair;
+    use rand::random;
+    use crate::gadgets::eddsa::{ed25519_circuit, fill_ecdsa_targets};
 
     fn test_eddsa_circuit_with_config(config: CircuitConfig) -> Result<()> {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;
         type F = <C as GenericConfig<D>>::F;
 
+	const MSGLEN1: usize = 100;
+
+        let msg1: Vec<u8> = (0..MSGLEN1).map(|_| random::<u8>() as u8).collect();
+        let keys1 = KeyPair::generate();
+        let pk1 = keys1.pk.to_vec();
+        let sig1 = keys1.sk.sign(msg1.clone(), None).to_vec();
+
         let mut pw = PartialWitness::new();
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
-        let targets = make_verify_circuits(&mut builder, SAMPLE_MSG1.len());
+        let targets = ed25519_circuit(&mut builder, msg1.len() * 8);
 
-        fill_circuits::<F, D>(
+        fill_ecdsa_targets::<F, D>(
             &mut pw,
-            SAMPLE_MSG1.as_bytes(),
-            SAMPLE_SIG1.as_slice(),
-            SAMPLE_PK1.as_slice(),
+            &msg1,
+            &sig1,
+            &pk1,
             &targets,
         );
 
@@ -155,21 +163,24 @@ mod tests {
         type C = PoseidonGoldilocksConfig;
         type F = <C as GenericConfig<D>>::F;
 
+	const MSGLEN1: usize = 100;
+
+        let msg1: Vec<u8> = (0..MSGLEN1).map(|_| random::<u8>() as u8).collect();
+        let msg2: Vec<u8> = (0..MSGLEN1).map(|_| random::<u8>() as u8).collect();
+        let keys1 = KeyPair::generate();
+        let pk1 = keys1.pk.to_vec();
+        let sig1 = keys1.sk.sign(msg2.clone(), None).to_vec();
+
         let mut pw = PartialWitness::new();
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
-        let targets = make_verify_circuits(&mut builder, SAMPLE_MSG1.len());
+        let targets = ed25519_circuit(&mut builder, msg1.len() * 8);
 
-        let mut rng = rand::thread_rng();
-        let rnd_idx = rng.gen_range(0..64);
-        let mut sig = SAMPLE_SIG1.clone();
-        let rnd_value = rng.gen_range(1..=255);
-        sig[rnd_idx] += rnd_value;
-        fill_circuits::<F, D>(
+        fill_ecdsa_targets::<F, D>(
             &mut pw,
-            SAMPLE_MSG1.as_bytes(),
-            sig.as_slice(),
-            SAMPLE_PK1.as_slice(),
+            &msg1,
+            &sig1,
+            &pk1,
             &targets,
         );
 
@@ -180,19 +191,16 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_eddsa_circuit_narrow() -> Result<()> {
         test_eddsa_circuit_with_config(CircuitConfig::standard_ecc_config())
     }
 
     #[test]
-    #[ignore]
     fn test_eddsa_circuit_wide() -> Result<()> {
         test_eddsa_circuit_with_config(CircuitConfig::wide_ecc_config())
     }
 
     #[test]
-    #[ignore]
     #[should_panic]
     fn test_eddsa_circuit_failure() {
         test_eddsa_circuit_with_config_failure(CircuitConfig::wide_ecc_config());

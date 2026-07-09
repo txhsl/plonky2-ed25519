@@ -1,21 +1,20 @@
-use plonky2_field::types::Field;
+use plonky2::field::types::{Field, PrimeField};
 use serde::{Deserialize, Serialize};
 
 use crate::curve::curve_types::{AffinePoint, Curve, ProjectivePoint};
 use crate::field::ed25519_base::Ed25519Base;
 use crate::field::ed25519_scalar::Ed25519Scalar;
-use plonky2_field::types::PrimeField;
 
+/// Twisted Edwards curve -x^2 + y^2 = 1 + d*x^2*y^2, called "edwards25519", where:
+/// p  2^255 - 19
+/// d  37095705934669439343138083508754565189542113879843219016388785533085940283555
+/// order  2^252 + 0x14def9dea2f79cd65812631a5cf5d3ed
+/// cofactor  8
+/// X(P)  15112221349535400772501151409588531511454012693041857206046113283949847762202
+/// Y(P)  46316835694926478169428394003475163141307993866256225615783033603165251855960
 #[derive(Debug, Copy, Clone, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Ed25519;
 
-// Twisted Edwards curve -x^2 + y^2 = 1 + d*x^2*y^2, called "edwards25519", where:
-// p  2^255 - 19
-// d  37095705934669439343138083508754565189542113879843219016388785533085940283555
-// order  2^252 + 0x14def9dea2f79cd65812631a5cf5d3ed
-// cofactor  8
-// X(P)  15112221349535400772501151409588531511454012693041857206046113283949847762202
-// Y(P)  46316835694926478169428394003475163141307993866256225615783033603165251855960
 impl Curve for Ed25519 {
     type BaseField = Ed25519Base;
     type ScalarField = Ed25519Scalar;
@@ -74,7 +73,7 @@ pub(crate) fn mul_naive(
 #[cfg(test)]
 mod tests {
     use num::BigUint;
-    use plonky2_field::types::Field;
+    use plonky2::field::types::Field;
 
     use crate::curve::curve_types::{AffinePoint, Curve};
     use crate::curve::ed25519::mul_naive;
